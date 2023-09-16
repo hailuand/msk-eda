@@ -1,0 +1,33 @@
+[
+  {
+    "namespace": "com.hailua.demo.msk",
+    "name": "TradeType",
+    "type": "enum",
+    "symbols": [
+      "BUY",
+      "SELL"
+    ]
+  },
+  {
+    "namespace": "com.hailua.demo.msk",
+    "type": "record",
+    "name": "TradeEvent",
+    "fields": [
+      {
+        "name": "ID",
+        "type": "string"
+      },
+      {
+        "name": "EventTime",
+        "type": {
+          "type": "long",
+          "logicalType": "timestamp-millis"
+        }
+      },
+      {
+        "name": "Type",
+        "type": "TradeType"
+      }
+    ]
+  }
+]
