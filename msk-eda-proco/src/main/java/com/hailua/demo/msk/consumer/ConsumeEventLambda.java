@@ -27,6 +27,11 @@ public class ConsumeEventLambda implements RequestHandler<KafkaEvent, Void> {
                 AWSSchemaRegistryConstants.AVRO_RECORD_TYPE, AvroRecordType.SPECIFIC_RECORD.name()));
     }
 
+    public static void main(String[] args) {
+        log.info("Testing - Logger");
+        System.out.println("Testing - SysOut");
+    }
+
     @Override
     public Void handleRequest(KafkaEvent kafkaEvent, Context context) {
         kafkaEvent.getRecords().values().stream()

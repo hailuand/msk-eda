@@ -54,6 +54,7 @@
                 <ignoredUnusedDeclaredDependency>org.apache.logging.log4j:log4j-slf4j2-impl</ignoredUnusedDeclaredDependency>
                 <ignoredUnusedDeclaredDependency>org.apache.logging.log4j:log4j-api</ignoredUnusedDeclaredDependency>
                 <ignoredUnusedDeclaredDependency>org.apache.logging.log4j:log4j-core</ignoredUnusedDeclaredDependency>
+                <ignoredUnusedDeclaredDependency>com.amazonaws:aws-lambda-java-runtime-interface-client</ignoredUnusedDeclaredDependency>
               </ignoredUnusedDeclaredDependencies>
             </configuration>
           </execution>
@@ -70,6 +71,12 @@
             <removeUnusedImports/>
             <palantirJavaFormat/>
           </java>
+          <typescript>
+            <includes>
+              <include>msk-eda-cdk/**/*.ts</include>
+            </includes>
+            <prettier/>
+          </typescript>
           <pom>
             <sortPom>
               <expandEmptyElements>false</expandEmptyElements>
