@@ -42,6 +42,11 @@ public class ProduceEventLambda implements RequestHandler<Void, Void> {
                 AWSSchemaRegistryConstants.COMPRESSION_TYPE, CompressionType.GZIP.name()));
     }
 
+    public static void main(String[] args) {
+        log.info("Testing - Logger");
+        System.out.println("Testing - SysOut");
+    }
+
     @Override
     public Void handleRequest(Void unused, Context context) {
         Random random = new Random();
@@ -70,7 +75,7 @@ public class ProduceEventLambda implements RequestHandler<Void, Void> {
                 });
         log.info("Flushing Producer before function end.");
         producer.flush();
-        ;
+
         return null;
     }
 }

@@ -1,66 +1,83 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <modelVersion>4.0.0</modelVersion>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.demo.hailua</groupId>
-    <name>MSK - EDA</name>
-    <artifactId>msk-eda</artifactId>
-    <version>1.0-SNAPSHOT</version>
-    <packaging>pom</packaging>
+  <groupId>com.demo.hailua</groupId>
+  <artifactId>msk-eda</artifactId>
+  <version>1.0-SNAPSHOT</version>
+  <packaging>pom</packaging>
+  <name>MSK - EDA</name>
 
-    <modules>
-        <module>msk-eda-proco</module>
-    </modules>
+  <modules>
+    <module>msk-eda-proco</module>
+  </modules>
 
-    <properties>
-        <maven.compiler.source>17</maven.compiler.source>
-        <maven.compiler.target>17</maven.compiler.target>
-    </properties>
+  <properties>
+    <maven.compiler.source>17</maven.compiler.source>
+    <maven.compiler.target>17</maven.compiler.target>
+      <slf4j.version>2.0.9</slf4j.version>
+      <log4j.version>2.20.0</log4j.version>
+      <avro.version>1.11.2</avro.version>
+      <lombok.version>1.18.28</lombok.version>
+      <kafka.version>3.5.1</kafka.version>
+      <aws.glue.schema.version>1.1.16</aws.glue.schema.version>
+      <aws.sdk2.version>2.20.148</aws.sdk2.version>
+  </properties>
 
-    <dependencies>
-        <dependency>
-            <groupId>com.diffplug.spotless</groupId>
-            <artifactId>spotless-lib</artifactId>
-            <version>2.41.0</version>
-            <scope>provided</scope>
-        </dependency>
-    </dependencies>
+  <dependencies>
+    <dependency>
+      <groupId>com.diffplug.spotless</groupId>
+      <artifactId>spotless-lib</artifactId>
+      <version>2.41.0</version>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
 
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-dependency-plugin</artifactId>
-                <version>3.6.0</version>
-                <executions>
-                    <execution>
-                        <id>analyze</id>
-                        <phase>test-compile</phase>
-                        <goals>
-                            <goal>analyze-only</goal>
-                        </goals>
-                        <configuration>
-                            <failOnWarning>true</failOnWarning>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-            <plugin>
-                <groupId>com.diffplug.spotless</groupId>
-                <artifactId>spotless-maven-plugin</artifactId>
-                <version>2.39.0</version>
-                <configuration>
-                    <!--                    <ratchetFrom>origin/master</ratchetFrom>-->
-                    <java>
-                        <importOrder/>
-                        <removeUnusedImports/>
-                        <palantirJavaFormat/>
-                    </java>
-                </configuration>
-            </plugin>
-        </plugins>
-    </build>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-dependency-plugin</artifactId>
+        <version>3.6.0</version>
+        <executions>
+          <execution>
+            <id>analyze</id>
+            <goals>
+              <goal>analyze-only</goal>
+            </goals>
+            <phase>test-compile</phase>
+            <configuration>
+              <failOnWarning>true</failOnWarning>
+              <ignoredUnusedDeclaredDependencies>
+                <ignoredUnusedDeclaredDependency>org.projectlombok:lombok</ignoredUnusedDeclaredDependency>
+                <ignoredUnusedDeclaredDependency>com.diffplug.spotless:spotless-lib</ignoredUnusedDeclaredDependency>
+                <ignoredUnusedDeclaredDependency>org.apache.logging.log4j:log4j-slf4j2-impl</ignoredUnusedDeclaredDependency>
+                <ignoredUnusedDeclaredDependency>org.apache.logging.log4j:log4j-api</ignoredUnusedDeclaredDependency>
+                <ignoredUnusedDeclaredDependency>org.apache.logging.log4j:log4j-core</ignoredUnusedDeclaredDependency>
+              </ignoredUnusedDeclaredDependencies>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>com.diffplug.spotless</groupId>
+        <artifactId>spotless-maven-plugin</artifactId>
+        <version>2.39.0</version>
+        <configuration>
+          <ratchetFrom>origin/main</ratchetFrom>
+          <java>
+            <importOrder/>
+            <removeUnusedImports/>
+            <palantirJavaFormat/>
+          </java>
+          <pom>
+            <sortPom>
+              <expandEmptyElements>false</expandEmptyElements>
+            </sortPom>
+          </pom>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
 
 </project>
