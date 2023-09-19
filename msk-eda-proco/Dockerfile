@@ -1,7 +1,9 @@
 FROM eclipse-temurin:17-jdk-jammy
 
-WORKDIR app/
+ENV WORKING_DIR="app"
+WORKDIR $WORKING_DIR
 
-COPY target/msk-eda-proco-1.0-SNAPSHOT-shaded.jar .
+COPY target/msk-eda-proco-*-shaded.jar $WORKING_DIR/msk-eda-proco.jar
+ENV CLASSPATH=$WORKING_DIR/*:$CLASSPATH
 
-ENTRYPOINT [ "java", "-jar", "msk-eda-proco-1.0-SNAPSHOT-shaded.jar", "com.amazonaws.services.lambda.runtime.api.client.AWSLambda" ]
+ENTRYPOINT [ "java", "com.amazonaws.services.lambda.runtime.api.client.AWSLambda" ]

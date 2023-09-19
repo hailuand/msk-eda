@@ -25,27 +25,17 @@ import software.amazon.awssdk.services.glue.model.CompressionType;
 
 @Slf4j
 public class ProduceEventLambda implements RequestHandler<Void, Void> {
-    private final KafkaProducer<String, TradeEvent> producer;
-    private final String topic;
-
-    public ProduceEventLambda() {
-        this.topic = System.getenv("kafka.topic.name");
-        this.producer = new KafkaProducer<>(Map.of(
-                ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, System.getenv("kafka.bootstrap.servers"),
-                ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName(),
-                ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, AWSKafkaAvroSerializer.class.getName(),
-                AWSSchemaRegistryConstants.AVRO_RECORD_TYPE, AvroRecordType.SPECIFIC_RECORD.name(),
-                AWSSchemaRegistryConstants.AWS_REGION, System.getenv("aws.region"),
-                AWSSchemaRegistryConstants.SCHEMA_NAME, "trade-event",
-                AWSSchemaRegistryConstants.SCHEMA_AUTO_REGISTRATION_SETTING, true,
-                AWSSchemaRegistryConstants.COMPATIBILITY_SETTING, Compatibility.BACKWARD.name(),
-                AWSSchemaRegistryConstants.COMPRESSION_TYPE, CompressionType.GZIP.name()));
-    }
-
-    public static void main(String[] args) {
-        log.info("Testing - Logger");
-        System.out.println("Testing - SysOut");
-    }
+    private final KafkaProducer<String, TradeEvent> producer = new KafkaProducer<>(Map.of(
+            ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, System.getenv("kafka.bootstrap.servers"),
+            ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName(),
+            ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, AWSKafkaAvroSerializer.class.getName(),
+            AWSSchemaRegistryConstants.AVRO_RECORD_TYPE, AvroRecordType.SPECIFIC_RECORD.name(),
+            AWSSchemaRegistryConstants.AWS_REGION, System.getenv("aws.region"),
+            AWSSchemaRegistryConstants.SCHEMA_NAME, "trade-event",
+            AWSSchemaRegistryConstants.SCHEMA_AUTO_REGISTRATION_SETTING, true,
+            AWSSchemaRegistryConstants.COMPATIBILITY_SETTING, Compatibility.BACKWARD.name(),
+            AWSSchemaRegistryConstants.COMPRESSION_TYPE, CompressionType.GZIP.name()));
+    private final String topic = System.getenv("kafka.topic.name");
 
     @Override
     public Void handleRequest(Void unused, Context context) {
