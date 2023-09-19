@@ -77,7 +77,7 @@ export class MskEdaCdkStack extends cdk.Stack {
         functionName: "msk-producer",
         code: lambda.DockerImageCode.fromEcr(proCoRepo, {
           tagOrDigest:
-            "sha256:76ded5039bcd1f85290a64bb3f1a6a86acfa109aa528a00876932d930364441a",
+            "sha256:cd5325465d0a5c7b2339e728345917fe3d2daab7bf23f1f9fdbc9335cedcbcf5",
           cmd: [
             "com.hailua.demo.msk.producer.ProduceEventLambda::handleRequest",
           ],
@@ -98,7 +98,7 @@ export class MskEdaCdkStack extends cdk.Stack {
     producerFunction.addToRolePolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
-        actions: ["kafka:*"],
+        actions: ["kafka:*", "kafka-cluster:*"],
         resources: [kafkaCluster.ref],
       })
     );

@@ -27,7 +27,6 @@ import org.apache.kafka.common.config.SaslConfigs;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.kafka.common.serialization.StringSerializer;
 import software.amazon.awssdk.services.glue.model.Compatibility;
-import software.amazon.awssdk.services.glue.model.CompressionType;
 import software.amazon.msk.auth.iam.IAMClientCallbackHandler;
 import software.amazon.msk.auth.iam.IAMLoginModule;
 
@@ -93,7 +92,7 @@ public class ProduceEventLambda implements RequestHandler<Void, Void> {
                 SaslConfigs.SASL_MECHANISM,
                 "AWS_MSK_IAM",
                 SaslConfigs.SASL_JAAS_CONFIG,
-                IAMLoginModule.class.getName(),
+                IAMLoginModule.class.getName() + " required;",
                 SaslConfigs.SASL_CLIENT_CALLBACK_HANDLER_CLASS,
                 IAMClientCallbackHandler.class.getName());
         try (AdminClient adminClient = AdminClient.create(adminConfig)) {
@@ -124,7 +123,7 @@ public class ProduceEventLambda implements RequestHandler<Void, Void> {
                 AWSSchemaRegistryConstants.COMPATIBILITY_SETTING,
                 Compatibility.BACKWARD,
                 AWSSchemaRegistryConstants.COMPRESSION_TYPE,
-                CompressionType.GZIP.name());
+                AWSSchemaRegistryConstants.COMPRESSION.ZLIB.name());
         Map<String, Object> producerConfig = Stream.concat(
                         adminConfig.entrySet().stream(), writeSpecificConfig.entrySet().stream())
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
