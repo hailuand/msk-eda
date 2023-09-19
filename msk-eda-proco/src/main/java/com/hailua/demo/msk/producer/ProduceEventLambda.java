@@ -1,5 +1,9 @@
 package com.hailua.demo.msk.producer;
 
+import com.amazonaws.services.kafka.AWSKafka;
+import com.amazonaws.services.kafka.AWSKafkaClientBuilder;
+import com.amazonaws.services.kafka.model.GetBootstrapBrokersRequest;
+import com.amazonaws.services.kafka.model.GetBootstrapBrokersResult;
 import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.amazonaws.services.schemaregistry.serializers.avro.AWSKafkaAvroSerializer;
@@ -25,20 +29,15 @@ import software.amazon.awssdk.services.glue.model.CompressionType;
 
 @Slf4j
 public class ProduceEventLambda implements RequestHandler<Void, Void> {
-    private final KafkaProducer<String, TradeEvent> producer = new KafkaProducer<>(Map.of(
-            ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, System.getenv("kafka.bootstrap.servers"),
-            ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName(),
-            ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, AWSKafkaAvroSerializer.class.getName(),
-            AWSSchemaRegistryConstants.AVRO_RECORD_TYPE, AvroRecordType.SPECIFIC_RECORD.name(),
-            AWSSchemaRegistryConstants.AWS_REGION, System.getenv("aws.region"),
-            AWSSchemaRegistryConstants.SCHEMA_NAME, "trade-event",
-            AWSSchemaRegistryConstants.SCHEMA_AUTO_REGISTRATION_SETTING, true,
-            AWSSchemaRegistryConstants.COMPATIBILITY_SETTING, Compatibility.BACKWARD.name(),
-            AWSSchemaRegistryConstants.COMPRESSION_TYPE, CompressionType.GZIP.name()));
-    private final String topic = System.getenv("kafka.topic.name");
+    private final String clusterArn = System.getenv("KAFKA_CLUSTER_ARN");
+    private final String topic = System.getenv("KAFKA_TOPIC");
+
+    private KafkaProducer<String, TradeEvent> producer;
 
     @Override
     public Void handleRequest(Void unused, Context context) {
+        initProducer();
+
         Random random = new Random();
         List<TradeEvent> buyEvents = IntStream.range(0, random.nextInt())
                 .mapToObj(i -> TradeEvent.newBuilder()
@@ -67,5 +66,42 @@ public class ProduceEventLambda implements RequestHandler<Void, Void> {
         producer.flush();
 
         return null;
+    }
+
+    private void initProducer() {
+        if (producer != null) {
+            return;
+        }
+
+        log.info("Initializing Producer.");
+        log.info("Cluster ARN: {}", clusterArn);
+        log.info("Topic name: {}", topic);
+        AWSKafka client = AWSKafkaClientBuilder.defaultClient();
+        GetBootstrapBrokersRequest getBootstrapBrokersRequest = new GetBootstrapBrokersRequest();
+        getBootstrapBrokersRequest.setClusterArn(clusterArn);
+        log.info("Looking up Kafka bootstrap brokers.");
+        GetBootstrapBrokersResult getBootstrapBrokersResult = client.getBootstrapBrokers(getBootstrapBrokersRequest);
+
+        log.info("Bootstrap brokers result: {}", getBootstrapBrokersResult);
+        String bootstrapBrokersString = getBootstrapBrokersResult.getBootstrapBrokerStringSaslIam();
+        producer = new KafkaProducer<>(Map.of(
+                ProducerConfig.BOOTSTRAP_SERVERS_CONFIG,
+                bootstrapBrokersString,
+                ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG,
+                StringSerializer.class.getName(),
+                ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG,
+                AWSKafkaAvroSerializer.class.getName(),
+                AWSSchemaRegistryConstants.AWS_REGION,
+                System.getenv("AWS_REGION"),
+                AWSSchemaRegistryConstants.AVRO_RECORD_TYPE,
+                AvroRecordType.SPECIFIC_RECORD.name(),
+                AWSSchemaRegistryConstants.SCHEMA_NAME,
+                "TradeEvent",
+                AWSSchemaRegistryConstants.SCHEMA_AUTO_REGISTRATION_SETTING,
+                true,
+                AWSSchemaRegistryConstants.COMPATIBILITY_SETTING,
+                Compatibility.BACKWARD,
+                AWSSchemaRegistryConstants.COMPRESSION_TYPE,
+                CompressionType.GZIP));
     }
 }
