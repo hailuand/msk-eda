@@ -77,7 +77,7 @@ export class MskEdaCdkStack extends cdk.Stack {
         functionName: "msk-producer",
         code: lambda.DockerImageCode.fromEcr(proCoRepo, {
           tagOrDigest:
-            "sha256:ac9d5f4b5d2935468adde03b97a4ffb8de02ade377c47c6345d97e7aa51c7b22",
+            "sha256:76ded5039bcd1f85290a64bb3f1a6a86acfa109aa528a00876932d930364441a",
           cmd: [
             "com.hailua.demo.msk.producer.ProduceEventLambda::handleRequest",
           ],

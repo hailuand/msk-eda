@@ -12,25 +12,29 @@ import com.amazonaws.services.schemaregistry.utils.AvroRecordType;
 import com.hailua.demo.msk.TradeEvent;
 import com.hailua.demo.msk.TradeType;
 import java.time.Instant;
-import java.util.List;
-import java.util.Map;
-import java.util.Random;
-import java.util.UUID;
+import java.util.*;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.admin.*;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.config.SaslConfigs;
+import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.kafka.common.serialization.StringSerializer;
 import software.amazon.awssdk.services.glue.model.Compatibility;
 import software.amazon.awssdk.services.glue.model.CompressionType;
+import software.amazon.msk.auth.iam.IAMClientCallbackHandler;
+import software.amazon.msk.auth.iam.IAMLoginModule;
 
 @Slf4j
 public class ProduceEventLambda implements RequestHandler<Void, Void> {
-    private final String clusterArn = System.getenv("KAFKA_CLUSTER_ARN");
-    private final String topic = System.getenv("KAFKA_TOPIC");
+    private final String KAFKA_CLUSTER_ARN = System.getenv("KAFKA_CLUSTER_ARN");
+    private final String TOPIC_NAME = System.getenv("KAFKA_TOPIC");
 
     private KafkaProducer<String, TradeEvent> producer;
 
@@ -57,7 +61,7 @@ public class ProduceEventLambda implements RequestHandler<Void, Void> {
                 Stream.concat(buyEvents.stream(), sellEvents.stream()).toList();
         log.info("{} trade events to publish.", tradeEvents.size());
         tradeEvents.parallelStream()
-                .map(te -> new ProducerRecord<>(topic, te.getID().toString(), te))
+                .map(te -> new ProducerRecord<>(TOPIC_NAME, te.getID().toString(), te))
                 .forEach(pr -> {
                     log.info("Publishing event {}.", pr.key());
                     producer.send(pr);
@@ -74,19 +78,37 @@ public class ProduceEventLambda implements RequestHandler<Void, Void> {
         }
 
         log.info("Initializing Producer.");
-        log.info("Cluster ARN: {}", clusterArn);
-        log.info("Topic name: {}", topic);
         AWSKafka client = AWSKafkaClientBuilder.defaultClient();
         GetBootstrapBrokersRequest getBootstrapBrokersRequest = new GetBootstrapBrokersRequest();
-        getBootstrapBrokersRequest.setClusterArn(clusterArn);
+        getBootstrapBrokersRequest.setClusterArn(KAFKA_CLUSTER_ARN);
         log.info("Looking up Kafka bootstrap brokers.");
         GetBootstrapBrokersResult getBootstrapBrokersResult = client.getBootstrapBrokers(getBootstrapBrokersRequest);
-
         log.info("Bootstrap brokers result: {}", getBootstrapBrokersResult);
         String bootstrapBrokersString = getBootstrapBrokersResult.getBootstrapBrokerStringSaslIam();
-        producer = new KafkaProducer<>(Map.of(
-                ProducerConfig.BOOTSTRAP_SERVERS_CONFIG,
+        Map<String, Object> adminConfig = Map.of(
+                AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG,
                 bootstrapBrokersString,
+                AdminClientConfig.SECURITY_PROTOCOL_CONFIG,
+                SecurityProtocol.SASL_SSL.name(),
+                SaslConfigs.SASL_MECHANISM,
+                "AWS_MSK_IAM",
+                SaslConfigs.SASL_JAAS_CONFIG,
+                IAMLoginModule.class.getName(),
+                SaslConfigs.SASL_CLIENT_CALLBACK_HANDLER_CLASS,
+                IAMClientCallbackHandler.class.getName());
+        try (AdminClient adminClient = AdminClient.create(adminConfig)) {
+            ListTopicsResult listTopicsResult = adminClient.listTopics();
+            Set<String> topics = listTopicsResult.names().get();
+            if (!topics.contains(TOPIC_NAME)) {
+                log.info("Topic {} does not exist. Creating...", TOPIC_NAME);
+                NewTopic newTopic = new NewTopic(TOPIC_NAME, 1, (short) 3);
+                CreateTopicsResult result = adminClient.createTopics(Collections.singleton(newTopic));
+                result.all();
+            }
+        } catch (ExecutionException | InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+        Map<String, Object> writeSpecificConfig = Map.of(
                 ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG,
                 StringSerializer.class.getName(),
                 ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG,
@@ -102,6 +124,11 @@ public class ProduceEventLambda implements RequestHandler<Void, Void> {
                 AWSSchemaRegistryConstants.COMPATIBILITY_SETTING,
                 Compatibility.BACKWARD,
                 AWSSchemaRegistryConstants.COMPRESSION_TYPE,
-                CompressionType.GZIP));
+                CompressionType.GZIP.name());
+        Map<String, Object> producerConfig = Stream.concat(
+                        adminConfig.entrySet().stream(), writeSpecificConfig.entrySet().stream())
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+        producer = new KafkaProducer<>(producerConfig);
+        log.info("Producer initialization complete.");
     }
 }
