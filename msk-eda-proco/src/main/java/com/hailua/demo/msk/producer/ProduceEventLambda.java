@@ -23,15 +23,11 @@ import org.apache.kafka.clients.admin.*;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.common.config.SaslConfigs;
-import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.kafka.common.serialization.StringSerializer;
 import software.amazon.awssdk.services.glue.model.Compatibility;
-import software.amazon.msk.auth.iam.IAMClientCallbackHandler;
-import software.amazon.msk.auth.iam.IAMLoginModule;
 
 @Slf4j
-public class ProduceEventLambda implements RequestHandler<Void, Void> {
+public class ProduceEventLambda extends KafkaBase implements RequestHandler<Void, Void> {
     private final String KAFKA_CLUSTER_ARN = System.getenv("KAFKA_CLUSTER_ARN");
     private final String TOPIC_NAME = System.getenv("KAFKA_TOPIC");
 
@@ -40,30 +36,18 @@ public class ProduceEventLambda implements RequestHandler<Void, Void> {
     @Override
     public Void handleRequest(Void unused, Context context) {
         initProducer();
-
-        Random random = new Random();
-        List<TradeEvent> buyEvents = IntStream.range(0, random.nextInt())
-                .mapToObj(i -> TradeEvent.newBuilder()
-                        .setEventTime(Instant.ofEpochMilli(System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(i)))
-                        .setID(UUID.randomUUID().toString())
-                        .setType(TradeType.BUY)
-                        .build())
-                .toList();
-        List<TradeEvent> sellEvents = IntStream.range(0, random.nextInt())
-                .mapToObj(i -> TradeEvent.newBuilder()
-                        .setEventTime(Instant.ofEpochMilli(System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(i)))
-                        .setID(UUID.randomUUID().toString())
-                        .setType(TradeType.SELL)
-                        .build())
-                .toList();
-        List<TradeEvent> tradeEvents =
-                Stream.concat(buyEvents.stream(), sellEvents.stream()).toList();
+        List<TradeEvent> tradeEvents = generateEvents();
         log.info("{} trade events to publish.", tradeEvents.size());
         tradeEvents.parallelStream()
                 .map(te -> new ProducerRecord<>(TOPIC_NAME, te.getID().toString(), te))
                 .forEach(pr -> {
                     log.info("Publishing event {}.", pr.key());
-                    producer.send(pr);
+                    try {
+                        producer.send(pr).get();
+                    } catch (ExecutionException | InterruptedException e) {
+                        log.error("Failed to publish event {}.", pr.key());
+                        throw new RuntimeException(e);
+                    }
                 });
         log.info("Flushing Producer before function end.");
         producer.flush();
@@ -84,29 +68,26 @@ public class ProduceEventLambda implements RequestHandler<Void, Void> {
         GetBootstrapBrokersResult getBootstrapBrokersResult = client.getBootstrapBrokers(getBootstrapBrokersRequest);
         log.info("Bootstrap brokers result: {}", getBootstrapBrokersResult);
         String bootstrapBrokersString = getBootstrapBrokersResult.getBootstrapBrokerStringSaslIam();
-        Map<String, Object> adminConfig = Map.of(
-                AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG,
-                bootstrapBrokersString,
-                AdminClientConfig.SECURITY_PROTOCOL_CONFIG,
-                SecurityProtocol.SASL_SSL.name(),
-                SaslConfigs.SASL_MECHANISM,
-                "AWS_MSK_IAM",
-                SaslConfigs.SASL_JAAS_CONFIG,
-                IAMLoginModule.class.getName() + " required;",
-                SaslConfigs.SASL_CLIENT_CALLBACK_HANDLER_CLASS,
-                IAMClientCallbackHandler.class.getName());
-        try (AdminClient adminClient = AdminClient.create(adminConfig)) {
+
+        try (AdminClient adminClient = createAdminClient(bootstrapBrokersString)) {
             ListTopicsResult listTopicsResult = adminClient.listTopics();
             Set<String> topics = listTopicsResult.names().get();
+            log.info("Topics: {}", topics);
             if (!topics.contains(TOPIC_NAME)) {
                 log.info("Topic {} does not exist. Creating...", TOPIC_NAME);
-                NewTopic newTopic = new NewTopic(TOPIC_NAME, 1, (short) 3);
+                NewTopic newTopic = new NewTopic(TOPIC_NAME, 1, (short) 2);
                 CreateTopicsResult result = adminClient.createTopics(Collections.singleton(newTopic));
-                result.all();
+                result.all().get();
             }
         } catch (ExecutionException | InterruptedException e) {
             throw new RuntimeException(e);
         }
+
+        producer = new KafkaProducer<>(producerConfig(bootstrapBrokersString));
+        log.info("Producer initialization complete.");
+    }
+
+    private Map<String, Object> producerConfig(String bootstrapBrokersString) {
         Map<String, Object> writeSpecificConfig = Map.of(
                 ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG,
                 StringSerializer.class.getName(),
@@ -124,10 +105,28 @@ public class ProduceEventLambda implements RequestHandler<Void, Void> {
                 Compatibility.BACKWARD,
                 AWSSchemaRegistryConstants.COMPRESSION_TYPE,
                 AWSSchemaRegistryConstants.COMPRESSION.ZLIB.name());
-        Map<String, Object> producerConfig = Stream.concat(
-                        adminConfig.entrySet().stream(), writeSpecificConfig.entrySet().stream())
+        return Stream.concat(
+                        adminClientConfig(bootstrapBrokersString).entrySet().stream(),
+                        writeSpecificConfig.entrySet().stream())
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
-        producer = new KafkaProducer<>(producerConfig);
-        log.info("Producer initialization complete.");
+    }
+
+    private static List<TradeEvent> generateEvents() {
+        Random random = new Random();
+        List<TradeEvent> buyEvents = IntStream.range(0, random.nextInt(200))
+                .mapToObj(i -> TradeEvent.newBuilder()
+                        .setEventTime(Instant.ofEpochMilli(System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(i)))
+                        .setID(UUID.randomUUID().toString())
+                        .setType(TradeType.BUY)
+                        .build())
+                .toList();
+        List<TradeEvent> sellEvents = IntStream.range(0, random.nextInt(200))
+                .mapToObj(i -> TradeEvent.newBuilder()
+                        .setEventTime(Instant.ofEpochMilli(System.currentTimeMillis() - TimeUnit.MINUTES.toMillis(i)))
+                        .setID(UUID.randomUUID().toString())
+                        .setType(TradeType.SELL)
+                        .build())
+                .toList();
+        return Stream.concat(buyEvents.stream(), sellEvents.stream()).toList();
     }
 }
