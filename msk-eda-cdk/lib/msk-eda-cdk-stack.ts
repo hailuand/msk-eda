@@ -108,7 +108,7 @@ export class MskEdaCdkStack extends cdk.Stack {
       ],
     });
     const consumerRepo = new cdk.aws_ecr.Repository(this, "ConsumerRepo", {
-      repositoryName: "msk-eda-producer",
+      repositoryName: "msk-eda-consumer",
       encryption: RepositoryEncryption.KMS,
       encryptionKey: key,
       imageScanOnPush: true,
@@ -130,7 +130,7 @@ export class MskEdaCdkStack extends cdk.Stack {
         functionName: "msk-producer",
         code: lambda.DockerImageCode.fromEcr(producerRepo, {
           tagOrDigest:
-            "sha256:2918dcc298ae5d04a21c0c9363ccabe06d27253135c7e9f9fc05cb96fbdc7ef4",
+            "sha256:1c1347368f3c5680ca3568528fb362cb962ee7556f2aad426631ba1df955aef1",
           cmd: [
             "com.hailua.demo.msk.producer.ProduceEventLambda::handleRequest",
           ],
@@ -192,58 +192,73 @@ export class MskEdaCdkStack extends cdk.Stack {
       })
     );
     // Kafka consumer app
-    // const ecsCluster = new ecs.Cluster(this, "EcsCluster", {
-    //   clusterName: "msk-eda-ecs-cluster",
-    //   containerInsights: true,
-    //   vpc: vpc,
-    // });
-    // const consumerTaskDefn = new ecs.FargateTaskDefinition(
-    //   this,
-    //   "KafkaConsumerFg",
-    //   {
-    //     cpu: 256,
-    //     memoryLimitMiB: 2048,
-    //     runtimePlatform: {
-    //       cpuArchitecture: ecs.CpuArchitecture.ARM64,
-    //       operatingSystemFamily: ecs.OperatingSystemFamily.LINUX,
-    //     },
-    //   }
-    // );
-    // consumerTaskDefn.addContainer("ConsumerTaskDefn", {
-    //   image: ecs.ContainerImage.fromEcrRepository(producerRepo),
-    //   command: ["com.hailua.demo.msk.consumer.ConsumeEvent"],
-    //   logging: ecs.LogDrivers.awsLogs({
-    //     streamPrefix: "msk-eda-consumer",
-    //   }),
-    // });
-    // consumerTaskDefn.addToTaskRolePolicy(
-    //   new PolicyStatement({
-    //     effect: Effect.ALLOW,
-    //     actions: [
-    //       "kafka-cluster:Connect",
-    //       "kafka-cluster:DescribeTopic",
-    //       "kafka-cluster:DescribeGroup",
-    //       "kafka-cluster:AlterGroup",
-    //       "kafka-cluster:ReadData",
-    //     ],
-    //     resources: [
-    //       kafkaCluster.clusterArn,
-    //       `arn:aws:kafka:${region}:${accountId}:topic/${kafkaCluster.clusterName}/*${kafkaTopicName}`,
-    //     ],
-    //   })
-    // );
-    // consumerTaskDefn.addToTaskRolePolicy(
-    //   new PolicyStatement({
-    //     effect: Effect.ALLOW,
-    //     actions: ["glue:GetSchemaByDefinition"],
-    //     resources: ["*"],
-    //   })
-    // );
-    // new ecs.FargateService(this, "EcsFgService", {
-    //   cluster: ecsCluster,
-    //   taskDefinition: consumerTaskDefn,
-    //   securityGroups: [fargateSecurityGroup],
-    //   desiredCount: 1,
-    // });
+    const ecsCluster = new ecs.Cluster(this, "EcsCluster", {
+      clusterName: "msk-eda-ecs-cluster",
+      containerInsights: true,
+      vpc: vpc,
+    });
+    const consumerTaskDefn = new ecs.FargateTaskDefinition(
+      this,
+      "KafkaConsumerFg",
+      {
+        cpu: 256,
+        memoryLimitMiB: 2048,
+        runtimePlatform: {
+          cpuArchitecture: ecs.CpuArchitecture.ARM64,
+          operatingSystemFamily: ecs.OperatingSystemFamily.LINUX,
+        },
+      }
+    );
+    consumerTaskDefn.addContainer("ConsumerTaskDefn", {
+      image: ecs.ContainerImage.fromEcrRepository(
+        consumerRepo,
+        "sha256:2528176b204f7c1d3f0b4f88d4bd4d8de36ecb094223bd913de9d156fb5dd358"
+      ),
+
+      logging: ecs.LogDrivers.awsLogs({
+        streamPrefix: "msk-eda-consumer",
+      }),
+      environment: {
+        KAFKA_CLUSTER_ARN: kafkaCluster.clusterArn,
+        KAFKA_TOPIC: kafkaTopicName,
+      },
+    });
+    consumerTaskDefn.addToTaskRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ["kafka:GetBootstrapBrokers", "kafka-cluster:Connect"],
+        resources: [kafkaCluster.clusterArn],
+      })
+    );
+    consumerTaskDefn.addToTaskRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: [
+          "kafka-cluster:Connect",
+          "kafka-cluster:DescribeTopic",
+          "kafka-cluster:DescribeGroup",
+          "kafka-cluster:AlterGroup",
+          "kafka-cluster:ReadData",
+        ],
+        resources: [
+          kafkaCluster.clusterArn,
+          `arn:aws:kafka:${region}:${accountId}:topic/${kafkaCluster.clusterName}/*${kafkaTopicName}`,
+          `arn:aws:kafka:${region}:${accountId}:group/${kafkaCluster.clusterName}/*msk-eda-consumer-group`,
+        ],
+      })
+    );
+    consumerTaskDefn.addToTaskRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ["glue:GetSchemaByDefinition", "glue:GetSchemaVersion"],
+        resources: ["*"],
+      })
+    );
+    new ecs.FargateService(this, "EcsFgService", {
+      cluster: ecsCluster,
+      taskDefinition: consumerTaskDefn,
+      securityGroups: [fargateSecurityGroup],
+      desiredCount: 1,
+    });
   }
 }
