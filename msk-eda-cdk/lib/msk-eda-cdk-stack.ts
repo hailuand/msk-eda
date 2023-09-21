@@ -5,7 +5,8 @@ import { Construct } from "constructs";
 import * as msk from "@aws-cdk/aws-msk-alpha";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import { Effect, PolicyStatement } from "aws-cdk-lib/aws-iam";
-import { ManagedKafkaEventSource } from "aws-cdk-lib/aws-lambda-event-sources";
+import * as ecs from "aws-cdk-lib/aws-ecs";
+import { LogGroup } from "aws-cdk-lib/aws-logs";
 
 export class MskEdaCdkStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -34,20 +35,43 @@ export class MskEdaCdkStack extends cdk.Stack {
         allowAllOutbound: true,
       }
     );
+    const fargateSecurityGroup = new ec2.SecurityGroup(
+      this,
+      "FargateSecurityGroup",
+      {
+        vpc: vpc,
+        securityGroupName: "fargateSecurityGroup",
+        allowAllOutbound: true,
+      }
+    );
     kafkaSecurityGroup.connections.allowFrom(
       lambdaSecurityGroup,
       ec2.Port.allTraffic(),
       "allowFromLambdaToKafka"
+    );
+    kafkaSecurityGroup.connections.allowFrom(
+      fargateSecurityGroup,
+      ec2.Port.allTraffic(),
+      "allowFromFargateToKafka"
     );
     lambdaSecurityGroup.connections.allowFrom(
       kafkaSecurityGroup,
       ec2.Port.allTraffic(),
       "allowFromKafkaToLambda"
     );
+    fargateSecurityGroup.connections.allowFrom(
+      kafkaSecurityGroup,
+      ec2.Port.allTraffic(),
+      "allowFromKafkaToFargate"
+    );
     // MSK - Provisioned (NB: ~45 minutes to deploy)
-    const kafkaCluster = new msk.Cluster(this, "MskCluster", {
-      clusterName: "kafka-cluster-prov",
+    const kafkaBrokerLogGroup = new LogGroup(this, "KafkaLogGroup");
+    const kafkaCluster = new msk.Cluster(this, "MskCluster2", {
+      clusterName: "kafka-cluster-prov2",
       vpc: vpc,
+      vpcSubnets: vpc.selectSubnets({
+        subnetType: ec2.SubnetType.PUBLIC,
+      }),
       kafkaVersion: msk.KafkaVersion.V3_4_0,
       instanceType: new ec2.InstanceType("kafka.t3.small"),
       encryptionInTransit: {
@@ -64,40 +88,37 @@ export class MskEdaCdkStack extends cdk.Stack {
       },
       securityGroups: [kafkaSecurityGroup],
       removalPolicy: cdk.RemovalPolicy.DESTROY,
-    });
-
-    // MSK - Serverless (NB - quick to deploy :))
-    /**
-    const kafkaCluster = new msk.CfnServerlessCluster(this, "MskCluster", {
-      clusterName: "kafka-cluste-svlss",
-      clientAuthentication: {
-        sasl: {
-          iam: {
-            enabled: true,
-          },
-        },
+      logging: {
+        cloudwatchLogGroup: kafkaBrokerLogGroup,
       },
-      vpcConfigs: [
-        {
-          securityGroups: [kafkaSecurityGroup.securityGroupId],
-          subnetIds: [
-            ...vpc.selectSubnets({
-              subnetType: ec2.SubnetType.PUBLIC,
-            }).subnetIds,
-          ],
-        },
-      ],
     });
-    */
 
     // ECR Repo
-    const proCoRepo = new cdk.aws_ecr.Repository(this, "Repository", {
-      repositoryName: "msk-eda-proco",
+    const producerRepo = new cdk.aws_ecr.Repository(this, "ProducerRepo", {
+      repositoryName: "msk-eda-producer",
       encryption: RepositoryEncryption.KMS,
       encryptionKey: key,
       imageScanOnPush: true,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       autoDeleteImages: true,
+      lifecycleRules: [
+        {
+          maxImageCount: 3,
+        },
+      ],
+    });
+    const consumerRepo = new cdk.aws_ecr.Repository(this, "ConsumerRepo", {
+      repositoryName: "msk-eda-producer",
+      encryption: RepositoryEncryption.KMS,
+      encryptionKey: key,
+      imageScanOnPush: true,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      autoDeleteImages: true,
+      lifecycleRules: [
+        {
+          maxImageCount: 3,
+        },
+      ],
     });
 
     // Producer Lambda
@@ -107,9 +128,9 @@ export class MskEdaCdkStack extends cdk.Stack {
       "ProducerImageFunction",
       {
         functionName: "msk-producer",
-        code: lambda.DockerImageCode.fromEcr(proCoRepo, {
+        code: lambda.DockerImageCode.fromEcr(producerRepo, {
           tagOrDigest:
-            "sha256:a0157746d70ef9ae6fde8e00c1aeb546fe2bac36e366fd1f12bc7243459be2e0",
+            "sha256:2918dcc298ae5d04a21c0c9363ccabe06d27253135c7e9f9fc05cb96fbdc7ef4",
           cmd: [
             "com.hailua.demo.msk.producer.ProduceEventLambda::handleRequest",
           ],
@@ -126,44 +147,11 @@ export class MskEdaCdkStack extends cdk.Stack {
         },
       }
     );
-
-    const consumerFunction = new lambda.DockerImageFunction(
-      this,
-      "ConsumerImageFunction",
-      {
-        functionName: "msk-consumer",
-        code: lambda.DockerImageCode.fromEcr(proCoRepo, {
-          tagOrDigest:
-            "sha256:a0157746d70ef9ae6fde8e00c1aeb546fe2bac36e366fd1f12bc7243459be2e0",
-          cmd: [
-            "com.hailua.demo.msk.consumer.ConsumeEventLambda::handleRequest",
-          ],
-        }),
-        architecture: lambda.Architecture.ARM_64,
-        memorySize: 1024,
-        timeout: cdk.Duration.minutes(2),
-        environmentEncryption: key,
-        vpc: vpc,
-        securityGroups: [lambdaSecurityGroup],
-      }
-    );
-    const consumerGroupId = "msk-eda-consumer";
-    consumerFunction.addEventSource(
-      new ManagedKafkaEventSource({
-        clusterArn: kafkaCluster.clusterArn,
-        topic: kafkaTopicName,
-        startingPosition: lambda.StartingPosition.LATEST,
-        batchSize: 150,
-        consumerGroupId: consumerGroupId,
-      })
-    );
-
     producerFunction.addToRolePolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
         actions: ["kafka:GetBootstrapBrokers", "kafka-cluster:Connect"],
-        resources: [kafkaCluster.clusterArn], // MSK - Provisioned
-        // resources: [kafkaCluster.ref], // MSK - Serverless
+        resources: [kafkaCluster.clusterArn],
       })
     );
     // The following were pulled after the fact to avoid having to cdk destroy + cdk bootstrap.
@@ -188,33 +176,6 @@ export class MskEdaCdkStack extends cdk.Stack {
       })
     );
 
-    // Requirements for Lambda to read from MSK
-    consumerFunction.addToRolePolicy(
-      new PolicyStatement({
-        effect: Effect.ALLOW,
-        actions: ["kafka:DescribeClusterV2", "kafka:GetBootstrapBrokers"],
-        resources: [kafkaCluster.clusterArn],
-      })
-    );
-    consumerFunction.addToRolePolicy(
-      new PolicyStatement({
-        effect: Effect.ALLOW,
-        actions: [
-          "kafka-cluster:Connect",
-          "kafka-cluster:DescribeGroup",
-          "kafka-cluster:AlterGroup",
-          "kafka-cluster:DescribeTopic",
-          "kafka-cluster:ReadData",
-          "kafka-cluster:DescribeClusterDynamicConfiguration",
-        ],
-        resources: [
-          kafkaCluster.clusterArn,
-          `arn:aws:kafka:${region}:${accountId}:topic/${kafkaCluster.clusterName}/*${kafkaTopicName}`,
-          `arn:aws:kafka:${region}:${accountId}:group/${kafkaCluster.clusterName}/*${consumerGroupId}`,
-        ],
-      })
-    );
-
     // Schema Registry AuthZ
     producerFunction.addToRolePolicy(
       new PolicyStatement({
@@ -230,5 +191,59 @@ export class MskEdaCdkStack extends cdk.Stack {
         ],
       })
     );
+    // Kafka consumer app
+    // const ecsCluster = new ecs.Cluster(this, "EcsCluster", {
+    //   clusterName: "msk-eda-ecs-cluster",
+    //   containerInsights: true,
+    //   vpc: vpc,
+    // });
+    // const consumerTaskDefn = new ecs.FargateTaskDefinition(
+    //   this,
+    //   "KafkaConsumerFg",
+    //   {
+    //     cpu: 256,
+    //     memoryLimitMiB: 2048,
+    //     runtimePlatform: {
+    //       cpuArchitecture: ecs.CpuArchitecture.ARM64,
+    //       operatingSystemFamily: ecs.OperatingSystemFamily.LINUX,
+    //     },
+    //   }
+    // );
+    // consumerTaskDefn.addContainer("ConsumerTaskDefn", {
+    //   image: ecs.ContainerImage.fromEcrRepository(producerRepo),
+    //   command: ["com.hailua.demo.msk.consumer.ConsumeEvent"],
+    //   logging: ecs.LogDrivers.awsLogs({
+    //     streamPrefix: "msk-eda-consumer",
+    //   }),
+    // });
+    // consumerTaskDefn.addToTaskRolePolicy(
+    //   new PolicyStatement({
+    //     effect: Effect.ALLOW,
+    //     actions: [
+    //       "kafka-cluster:Connect",
+    //       "kafka-cluster:DescribeTopic",
+    //       "kafka-cluster:DescribeGroup",
+    //       "kafka-cluster:AlterGroup",
+    //       "kafka-cluster:ReadData",
+    //     ],
+    //     resources: [
+    //       kafkaCluster.clusterArn,
+    //       `arn:aws:kafka:${region}:${accountId}:topic/${kafkaCluster.clusterName}/*${kafkaTopicName}`,
+    //     ],
+    //   })
+    // );
+    // consumerTaskDefn.addToTaskRolePolicy(
+    //   new PolicyStatement({
+    //     effect: Effect.ALLOW,
+    //     actions: ["glue:GetSchemaByDefinition"],
+    //     resources: ["*"],
+    //   })
+    // );
+    // new ecs.FargateService(this, "EcsFgService", {
+    //   cluster: ecsCluster,
+    //   taskDefinition: consumerTaskDefn,
+    //   securityGroups: [fargateSecurityGroup],
+    //   desiredCount: 1,
+    // });
   }
 }

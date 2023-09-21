@@ -9,7 +9,8 @@
   <name>MSK - EDA</name>
 
   <modules>
-    <module>msk-eda-proco</module>
+    <module>msk-eda-producer</module>
+    <module>msk-eda-consumer</module>
   </modules>
 
   <properties>
@@ -27,12 +28,96 @@
 
   <dependencyManagement>
     <dependencies>
+      <!-- ME -->
+      <dependency>
+        <groupId>com.demo.hailua</groupId>
+        <artifactId>msk-eda-producer</artifactId>
+        <version>1.0-SNAPSHOT</version>
+      </dependency>
+      <!-- AWS -->
       <dependency>
         <groupId>software.amazon.awssdk</groupId>
         <artifactId>bom</artifactId>
         <version>${aws.sdk2.version}</version>
         <type>pom</type>
         <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>com.amazonaws</groupId>
+        <artifactId>aws-lambda-java-core</artifactId>
+        <version>1.2.3</version>
+      </dependency>
+      <dependency>
+        <groupId>software.amazon.glue</groupId>
+        <artifactId>schema-registry-serde</artifactId>
+        <version>${aws.glue.schema.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>software.amazon.glue</groupId>
+        <artifactId>schema-registry-common</artifactId>
+        <version>${aws.glue.schema.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.amazonaws</groupId>
+        <artifactId>aws-lambda-java-runtime-interface-client</artifactId>
+        <version>2.4.1</version>
+      </dependency>
+      <dependency>
+        <groupId>com.amazonaws</groupId>
+        <artifactId>aws-java-sdk-kafka</artifactId>
+        <version>${aws.sdk1.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>software.amazon.msk</groupId>
+        <artifactId>aws-msk-iam-auth</artifactId>
+        <version>1.1.9</version>
+      </dependency>
+      <!-- KAFKA -->
+      <dependency>
+        <groupId>org.apache.kafka</groupId>
+        <artifactId>kafka-clients</artifactId>
+        <version>${kafka.version}</version>
+      </dependency>
+      <!-- AVRO -->
+      <dependency>
+        <groupId>org.apache.avro</groupId>
+        <artifactId>avro</artifactId>
+        <version>${avro.version}</version>
+        <exclusions>
+          <exclusion>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+          </exclusion>
+        </exclusions>
+      </dependency>
+      <!-- LOMBOK -->
+      <dependency>
+        <groupId>org.projectlombok</groupId>
+        <artifactId>lombok</artifactId>
+        <version>${lombok.version}</version>
+        <scope>provided</scope>
+      </dependency>
+      <!-- SLF4J -->
+      <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>${slf4j.version}</version>
+      </dependency>
+      <!-- LOG4J -->
+      <dependency>
+        <groupId>org.apache.logging.log4j</groupId>
+        <artifactId>log4j-api</artifactId>
+        <version>${log4j.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.logging.log4j</groupId>
+        <artifactId>log4j-core</artifactId>
+        <version>${log4j.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.logging.log4j</groupId>
+        <artifactId>log4j-slf4j2-impl</artifactId>
+        <version>${log4j.version}</version>
       </dependency>
     </dependencies>
   </dependencyManagement>
