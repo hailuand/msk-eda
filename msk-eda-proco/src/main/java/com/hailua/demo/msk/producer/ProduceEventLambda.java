@@ -23,6 +23,7 @@ import org.apache.kafka.clients.admin.*;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.serialization.StringSerializer;
 import software.amazon.awssdk.services.glue.model.Compatibility;
 
@@ -38,19 +39,15 @@ public class ProduceEventLambda extends KafkaBase implements RequestHandler<Void
         initProducer();
         List<TradeEvent> tradeEvents = generateEvents();
         log.info("{} trade events to publish.", tradeEvents.size());
-        tradeEvents.parallelStream()
+        tradeEvents.stream()
                 .map(te -> new ProducerRecord<>(TOPIC_NAME, te.getID().toString(), te))
                 .forEach(pr -> {
                     log.info("Publishing event {}.", pr.key());
-                    try {
-                        producer.send(pr).get();
-                    } catch (ExecutionException | InterruptedException e) {
-                        log.error("Failed to publish event {}.", pr.key());
-                        throw new RuntimeException(e);
-                    }
+                    producer.send(pr);
                 });
         log.info("Flushing Producer before function end.");
         producer.flush();
+        log.info("Flushed.");
 
         return null;
     }
@@ -70,7 +67,9 @@ public class ProduceEventLambda extends KafkaBase implements RequestHandler<Void
         String bootstrapBrokersString = getBootstrapBrokersResult.getBootstrapBrokerStringSaslIam();
 
         try (AdminClient adminClient = createAdminClient(bootstrapBrokersString)) {
-            ListTopicsResult listTopicsResult = adminClient.listTopics();
+            ListTopicsOptions lto = new ListTopicsOptions();
+            lto.timeoutMs((int) TimeUnit.MINUTES.toMillis(2));
+            ListTopicsResult listTopicsResult = adminClient.listTopics(lto);
             Set<String> topics = listTopicsResult.names().get();
             log.info("Topics: {}", topics);
             if (!topics.contains(TOPIC_NAME)) {
@@ -93,12 +92,14 @@ public class ProduceEventLambda extends KafkaBase implements RequestHandler<Void
                 StringSerializer.class.getName(),
                 ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG,
                 AWSKafkaAvroSerializer.class.getName(),
+                ProducerConfig.LINGER_MS_CONFIG,
+                20,
+                ProducerConfig.COMPRESSION_TYPE_CONFIG,
+                CompressionType.GZIP.name,
                 AWSSchemaRegistryConstants.AWS_REGION,
                 System.getenv("AWS_REGION"),
                 AWSSchemaRegistryConstants.AVRO_RECORD_TYPE,
                 AvroRecordType.SPECIFIC_RECORD.name(),
-                AWSSchemaRegistryConstants.SCHEMA_NAME,
-                "TradeEvent",
                 AWSSchemaRegistryConstants.SCHEMA_AUTO_REGISTRATION_SETTING,
                 true,
                 AWSSchemaRegistryConstants.COMPATIBILITY_SETTING,

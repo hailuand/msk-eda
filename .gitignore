@@ -5,6 +5,7 @@ out/
 .idea
 target
 *.iml
+.aws-sam
 
 ### Eclipse ###
 .apt_generated

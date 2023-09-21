@@ -5,8 +5,17 @@ import { Construct } from "constructs";
 import * as msk from "@aws-cdk/aws-msk-alpha";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as glue from "aws-cdk-lib/aws-glue";
-import * as iam from "aws-cdk-lib/aws-iam";
-import { Effect, PolicyStatement } from "aws-cdk-lib/aws-iam";
+import {
+  Effect,
+  ManagedPolicy,
+  Policy,
+  PolicyDocument,
+  PolicyStatement,
+  Role,
+  ServicePrincipal,
+} from "aws-cdk-lib/aws-iam";
+import { LogGroup } from "aws-cdk-lib/aws-logs";
+import { log } from "console";
 
 export class MskEdaCdkStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -62,11 +71,6 @@ export class MskEdaCdkStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
-    const schemaRegistry = new glue.CfnRegistry(this, "SchemaRegistry", {
-      name: "demo-registry",
-    });
-    schemaRegistry.applyRemovalPolicy(cdk.RemovalPolicy.DESTROY);
-
     // MSK - Serverless (NB - quick to deploy :))
     /**
     const kafkaCluster = new msk.CfnServerlessCluster(this, "MskCluster", {
@@ -110,7 +114,7 @@ export class MskEdaCdkStack extends cdk.Stack {
         functionName: "msk-producer",
         code: lambda.DockerImageCode.fromEcr(proCoRepo, {
           tagOrDigest:
-            "sha256:ec9527f0bdbc4f78f09f45dd550c14963ded384efc1f56280e9c783870c84c25",
+            "sha256:eb007e48f770dc777158370db3ad14e50c9adc5b9ed12bec90b028dbb39b53c0",
           cmd: [
             "com.hailua.demo.msk.producer.ProduceEventLambda::handleRequest",
           ],
@@ -140,6 +144,7 @@ export class MskEdaCdkStack extends cdk.Stack {
     // This could be avoided by uncommenting DEFAULT_ACCOUNT and DEFAULT_REGION
     const region = "us-east-1";
     const accountId = "443535183963";
+
     producerFunction.addToRolePolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
@@ -148,10 +153,12 @@ export class MskEdaCdkStack extends cdk.Stack {
           "kafka-cluster:DescribeTopic",
           "kafka-cluster:DescribeTopicDynamicConfiguration",
           "kafka-cluster:WriteData",
+          "kafka-cluster:WriteDataIdempotently",
         ],
         resources: [
+          kafkaCluster.clusterArn,
           `arn:aws:kafka:${region}:${accountId}:topic/${kafkaCluster.clusterName}/*${kafkaTopicName}`,
-        ], // MSK - Provisioned
+        ],
       })
     );
 
@@ -166,8 +173,7 @@ export class MskEdaCdkStack extends cdk.Stack {
           "glue:PutSchemaVersionMetadata",
         ],
         resources: [
-          `arn:aws:glue:${region}:${accountId}:registry/default-registry`,
-          `arn:aws:glue:${region}:${accountId}:registry/default-registry/*`,
+          "*", // Only wildcard supported due to https://github.com/awslabs/aws-glue-schema-registry/issues/68
         ],
       })
     );
