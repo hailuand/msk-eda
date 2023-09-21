@@ -9,6 +9,10 @@ import software.amazon.msk.auth.iam.IAMClientCallbackHandler;
 import software.amazon.msk.auth.iam.IAMLoginModule;
 
 public abstract class KafkaBase {
+    protected final String KAFKA_CLUSTER_ARN = System.getenv("KAFKA_CLUSTER_ARN");
+    protected final String TOPIC_NAME = System.getenv("KAFKA_TOPIC");
+    protected static final String AWS_REGION_PROP = "AWS_REGION";
+
     protected Map<String, Object> adminClientConfig(final String bootstrapBrokersString) {
         return Map.of(
                 AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG,

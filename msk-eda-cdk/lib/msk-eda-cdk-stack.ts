@@ -4,18 +4,8 @@ import * as lambda from "aws-cdk-lib/aws-lambda";
 import { Construct } from "constructs";
 import * as msk from "@aws-cdk/aws-msk-alpha";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
-import * as glue from "aws-cdk-lib/aws-glue";
-import {
-  Effect,
-  ManagedPolicy,
-  Policy,
-  PolicyDocument,
-  PolicyStatement,
-  Role,
-  ServicePrincipal,
-} from "aws-cdk-lib/aws-iam";
-import { LogGroup } from "aws-cdk-lib/aws-logs";
-import { log } from "console";
+import { Effect, PolicyStatement } from "aws-cdk-lib/aws-iam";
+import { ManagedKafkaEventSource } from "aws-cdk-lib/aws-lambda-event-sources";
 
 export class MskEdaCdkStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -48,6 +38,11 @@ export class MskEdaCdkStack extends cdk.Stack {
       lambdaSecurityGroup,
       ec2.Port.allTraffic(),
       "allowFromLambdaToKafka"
+    );
+    lambdaSecurityGroup.connections.allowFrom(
+      kafkaSecurityGroup,
+      ec2.Port.allTraffic(),
+      "allowFromKafkaToLambda"
     );
     // MSK - Provisioned (NB: ~45 minutes to deploy)
     const kafkaCluster = new msk.Cluster(this, "MskCluster", {
@@ -114,7 +109,7 @@ export class MskEdaCdkStack extends cdk.Stack {
         functionName: "msk-producer",
         code: lambda.DockerImageCode.fromEcr(proCoRepo, {
           tagOrDigest:
-            "sha256:eb007e48f770dc777158370db3ad14e50c9adc5b9ed12bec90b028dbb39b53c0",
+            "sha256:a0157746d70ef9ae6fde8e00c1aeb546fe2bac36e366fd1f12bc7243459be2e0",
           cmd: [
             "com.hailua.demo.msk.producer.ProduceEventLambda::handleRequest",
           ],
@@ -130,6 +125,37 @@ export class MskEdaCdkStack extends cdk.Stack {
           KAFKA_TOPIC: kafkaTopicName,
         },
       }
+    );
+
+    const consumerFunction = new lambda.DockerImageFunction(
+      this,
+      "ConsumerImageFunction",
+      {
+        functionName: "msk-consumer",
+        code: lambda.DockerImageCode.fromEcr(proCoRepo, {
+          tagOrDigest:
+            "sha256:a0157746d70ef9ae6fde8e00c1aeb546fe2bac36e366fd1f12bc7243459be2e0",
+          cmd: [
+            "com.hailua.demo.msk.consumer.ConsumeEventLambda::handleRequest",
+          ],
+        }),
+        architecture: lambda.Architecture.ARM_64,
+        memorySize: 1024,
+        timeout: cdk.Duration.minutes(2),
+        environmentEncryption: key,
+        vpc: vpc,
+        securityGroups: [lambdaSecurityGroup],
+      }
+    );
+    const consumerGroupId = "msk-eda-consumer";
+    consumerFunction.addEventSource(
+      new ManagedKafkaEventSource({
+        clusterArn: kafkaCluster.clusterArn,
+        topic: kafkaTopicName,
+        startingPosition: lambda.StartingPosition.LATEST,
+        batchSize: 150,
+        consumerGroupId: consumerGroupId,
+      })
     );
 
     producerFunction.addToRolePolicy(
@@ -162,7 +188,34 @@ export class MskEdaCdkStack extends cdk.Stack {
       })
     );
 
-    // Schema Registry authz
+    // Requirements for Lambda to read from MSK
+    consumerFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ["kafka:DescribeClusterV2", "kafka:GetBootstrapBrokers"],
+        resources: [kafkaCluster.clusterArn],
+      })
+    );
+    consumerFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: [
+          "kafka-cluster:Connect",
+          "kafka-cluster:DescribeGroup",
+          "kafka-cluster:AlterGroup",
+          "kafka-cluster:DescribeTopic",
+          "kafka-cluster:ReadData",
+          "kafka-cluster:DescribeClusterDynamicConfiguration",
+        ],
+        resources: [
+          kafkaCluster.clusterArn,
+          `arn:aws:kafka:${region}:${accountId}:topic/${kafkaCluster.clusterName}/*${kafkaTopicName}`,
+          `arn:aws:kafka:${region}:${accountId}:group/${kafkaCluster.clusterName}/*${consumerGroupId}`,
+        ],
+      })
+    );
+
+    // Schema Registry AuthZ
     producerFunction.addToRolePolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,

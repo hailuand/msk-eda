@@ -29,9 +29,6 @@ import software.amazon.awssdk.services.glue.model.Compatibility;
 
 @Slf4j
 public class ProduceEventLambda extends KafkaBase implements RequestHandler<Void, Void> {
-    private final String KAFKA_CLUSTER_ARN = System.getenv("KAFKA_CLUSTER_ARN");
-    private final String TOPIC_NAME = System.getenv("KAFKA_TOPIC");
-
     private KafkaProducer<String, TradeEvent> producer;
 
     @Override
@@ -97,7 +94,7 @@ public class ProduceEventLambda extends KafkaBase implements RequestHandler<Void
                 ProducerConfig.COMPRESSION_TYPE_CONFIG,
                 CompressionType.GZIP.name,
                 AWSSchemaRegistryConstants.AWS_REGION,
-                System.getenv("AWS_REGION"),
+                System.getenv(AWS_REGION_PROP),
                 AWSSchemaRegistryConstants.AVRO_RECORD_TYPE,
                 AvroRecordType.SPECIFIC_RECORD.name(),
                 AWSSchemaRegistryConstants.SCHEMA_AUTO_REGISTRATION_SETTING,
